@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead Finder — поиск клиентов по нише и городу</title>
+<style>
+  :root {
+    --bg: #0b0d0c;
+    --panel: #141716;
+    --border: #232826;
+    --text: #eef2f0;
+    --muted: #8a938f;
+    --accent: #38d67a;
+    --danger: #e0605a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .field { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 12px; color: var(--muted); }
+  input, select {
+    background: #0f1211;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  input:focus, select:focus { outline: 1px solid var(--accent); }
+  button {
+    background: var(--accent);
+    color: #0b0d0c;
+    border: none;
+    padding: 11px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  button.danger-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--danger);
+  }
+  .stats { display: flex; gap: 20px; margin: 14px 0 0; font-size: 13px; color: var(--muted); }
+  .stats b { color: var(--text); }
+  .table-scroll {
+    max-height: 62vh;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+  th {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 12px;
+    position: sticky;
+    top: 0;
+    background: #191d1c;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    z-index: 1;
+  }
+  th:hover { color: var(--text); }
+  th .sort-arrow { color: var(--accent); margin-left: 4px; }
+  tbody tr:nth-child(even) { background: rgba(255,255,255,.018); }
+  tbody tr:hover { background: rgba(56,214,122,.05); }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 12px; flex-wrap: wrap; }
+  .toolbar-actions { display: flex; gap: 10px; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .filters input, .filters select { min-width: 160px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+  .error { color: var(--danger); font-size: 13px; margin-top: 10px; }
+  .row-del {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px 8px;
+  }
+  .row-del:hover { color: var(--danger); }
+  .count-pill { color: var(--muted); font-size: 12px; align-self: center; }
+  .phone-input {
+    width: 100%;
+    min-width: 120px;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+  .wa-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #0b0d0c;
+    background: #25d366;
+    border-radius: 999px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .wa-link:hover { background: #2fe075; }
+  .wa-link.disabled {
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    pointer-events: none;
+  }
+  .status-select {
+    padding: 6px 8px;
+    font-size: 12px;
+    min-width: 130px;
+    border-width: 1px;
+  }
+  .status-select[data-status="new"] { color: var(--muted); }
+  .status-select[data-status="called"] { color: #5aa8e0; border-color: #5aa8e055; }
+  .status-select[data-status="interested"] { color: var(--accent); border-color: #38d67a55; }
+  .status-select[data-status="not_interested"] { color: var(--danger); border-color: #e0605a55; }
+  .status-select[data-status="has_site"] { color: var(--muted); }
+  .status-select[data-status="unreachable"] { color: #e0a83a; border-color: #e0a83a55; }
+  .find-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .find-link:hover { text-decoration: underline; }
+  td.col-tight { white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lead Finder</h1>
+  <div class="sub">Ниша + город → шорт-лист организаций из 2GIS. Личный инструмент, без тарифов и лимитов.</div>
+
+  <div class="panel">
+    <div class="row">
+      <div class="field">
+        <label>Ниша</label>
+        <input id="niche" placeholder="пластическая хирургия" />
+      </div>
+      <div class="field">
+        <label>Город</label>
+        <input id="city" placeholder="Нижний Новгород" />
+      </div>
+      <div class="field" style="max-width: 100px;">
+        <label>Сколько</label>
+        <input id="count" type="number" value="30" min="1" max="200" />
+      </div>
+      <div class="field" style="flex: none; align-self: flex-end;">
+        <button id="searchBtn" onclick="runSearch()">Искать</button>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="error" id="error"></div>
+  </div>
+
+  <div class="panel" id="topLeadsPanel" style="display: none;">
+    <div class="toolbar">
+      <div>
+        <div style="font-weight: 600; margin-bottom: 2px;">🔥 Топ лиды</div>
+        <div class="sub" style="margin: 0;">Ниша под запись+бота, ещё не отработаны, у кого уже есть телефон — выше в списке.</div>
+      </div>
+    </div>
+    <div id="topLeadsWrap"></div>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <div class="sub" style="margin: 0;">Ключ 2GIS не отдаёт телефон/сайт — добирай вручную по названию+адресу на 2gis.ru или гуглом.</div>
+      <div class="toolbar-actions">
+        <button class="ghost" onclick="exportCsv()">Экспорт CSV</button>
+        <button class="danger-ghost" onclick="clearAll()">Очистить всё</button>
+      </div>
+    </div>
+
+    <div class="filters">
+      <input id="filterText" placeholder="Быстрый поиск по названию/адресу…" oninput="applyFilters()" style="flex: 2;" />
+      <select id="filterNiche" onchange="applyFilters()"><option value="">Все ниши</option></select>
+      <select id="filterCity" onchange="applyFilters()"><option value="">Все города</option></select>
+      <select id="filterStatus" onchange="applyFilters()"><option value="">Любой статус</option></select>
+      <span class="count-pill" id="countPill"></span>
+    </div>
+
+    <div id="tableWrap"></div>
+  </div>
+</div>
+
+<script>
+let allLeads = [];
+
+const STATUS_OPTIONS = [
+  { value: 'new', label: 'Новый' },
+  { value: 'called', label: 'Звонил' },
+  { value: 'interested', label: 'Заинтересован' },
+  { value: 'not_interested', label: 'Не интересно' },
+  { value: 'has_site', label: 'Уже есть сайт' },
+  { value: 'unreachable', label: 'Недозвонился' },
+];
+
+function statusLabel(value) {
+  const found = STATUS_OPTIONS.find(s => s.value === value);
+  return found ? found.label : value;
+}
+
+function waNumberFromPhone(phone) {
+  let digits = (phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length === 11 && digits[0] === '8') {
+    digits = '7' + digits.slice(1);
+  } else if (digits.length === 10) {
+    digits = '7' + digits;
+  }
+  if (digits.length < 10) return null;
+  return digits;
+}
+
+function updateWaLink(linkEl, phone) {
+  const number = waNumberFromPhone(phone);
+  if (number) {
+    linkEl.href = `https://wa.me/${number}`;
+    linkEl.textContent = 'WhatsApp →';
+    linkEl.classList.remove('disabled');
+  } else {
+    linkEl.removeAttribute('href');
+    linkEl.textContent = 'WhatsApp →';
+    linkEl.classList.add('disabled');
+  }
+}
+
+function setStats(text) {
+  document.getElementById('stats').textContent = text;
+}
+
+function restoreLastQuery() {
+  const niche = localStorage.getItem('leadfinder_niche');
+  const city = localStorage.getItem('leadfinder_city');
+  if (niche) document.getElementById('niche').value = niche;
+  if (city) document.getElementById('city').value = city;
+}
+
+async function runSearch() {
+  const niche = document.getElementById('niche').value.trim();
+  const city = document.getElementById('city').value.trim();
+  const count = parseInt(document.getElementById('count').value, 10) || 30;
+  const btn = document.getElementById('searchBtn');
+  const errorEl = document.getElementById('error');
+  errorEl.textContent = '';
+
+  if (!niche || !city) {
+    errorEl.textContent = 'Заполни нишу и город';
+    return;
+  }
+
+  localStorage.setItem('leadfinder_niche', niche);
+  localStorage.setItem('leadfinder_city', city);
+
+  btn.disabled = true;
+  btn.textContent = 'Ищу…';
+
+  try {
+    const resp = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ niche, city, count })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || 'Ошибка запроса');
+
+    setStats(`Найдено: ${data.total}`);
+    await loadLeads({ keepFilters: false, focusNiche: niche, focusCity: city });
+  } catch (e) {
+    errorEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Искать';
+  }
+}
+
+async function loadLeads(opts) {
+  opts = opts || {};
+  const resp = await fetch('/api/leads');
+  allLeads = await resp.json();
+  populateFilterOptions();
+  if (!opts.keepFilters) {
+    document.getElementById('filterText').value = '';
+    document.getElementById('filterNiche').value = opts.focusNiche || '';
+    document.getElementById('filterCity').value = opts.focusCity || '';
+  }
+  applyFilters();
+  renderTopLeads();
+}
+
+function populateFilterOptions() {
+  const nicheSel = document.getElementById('filterNiche');
+  const citySel = document.getElementById('filterCity');
+  const prevNiche = nicheSel.value;
+  const prevCity = citySel.value;
+
+  const niches = [...new Set(allLeads.map(r => r.niche))].sort();
+  const cities = [...new Set(allLeads.map(r => r.city))].sort();
+
+  nicheSel.innerHTML = '';
+  const allNicheOpt = document.createElement('option');
+  allNicheOpt.value = '';
+  allNicheOpt.textContent = 'Все ниши';
+  nicheSel.appendChild(allNicheOpt);
+  niches.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    nicheSel.appendChild(opt);
+  });
+
+  citySel.innerHTML = '';
+  const allCityOpt = document.createElement('option');
+  allCityOpt.value = '';
+  allCityOpt.textContent = 'Все города';
+  citySel.appendChild(allCityOpt);
+  cities.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    citySel.appendChild(opt);
+  });
+
+  nicheSel.value = niches.includes(prevNiche) ? prevNiche : '';
+  citySel.value = cities.includes(prevCity) ? prevCity : '';
+
+  const statusSel = document.getElementById('filterStatus');
+  if (!statusSel.dataset.filled) {
+    STATUS_OPTIONS.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.value;
+      opt.textContent = s.label;
+      statusSel.appendChild(opt);
+    });
+    statusSel.dataset.filled = '1';
+  }
+}
+
+let sortState = { key: null, dir: 1 };
+
+function applyFilters() {
+  const text = document.getElementById('filterText').value.trim().toLowerCase();
+  const niche = document.getElementById('filterNiche').value;
+  const city = document.getElementById('filterCity').value;
+  const status = document.getElementById('filterStatus').value;
+
+  let filtered = allLeads.filter(r => {
+    if (niche && r.niche !== niche) return false;
+    if (city && r.city !== city) return false;
+    if (status && (r.status || 'new') !== status) return false;
+    if (text) {
+      const hay = `${r.name} ${r.address} ${r.rubric}`.toLowerCase();
+      if (!hay.includes(text)) return false;
+    }
+    return true;
+  });
+
+  if (sortState.key) {
+    filtered = filtered.slice().sort((a, b) => {
+      const av = (a[sortState.key] || '').toString().toLowerCase();
+      const bv = (b[sortState.key] || '').toString().toLowerCase();
+      return av.localeCompare(bv, 'ru') * sortState.dir;
+    });
+  }
+
+  document.getElementById('countPill').textContent =
+    `${filtered.length} из ${allLeads.length}`;
+  renderTable(filtered);
+}
+
+function sortBy(key) {
+  if (sortState.key === key) {
+    sortState.dir *= -1;
+  } else {
+    sortState.key = key;
+    sortState.dir = 1;
+  }
+  applyFilters();
+}
+
+function cell(text) {
+  const td = document.createElement('td');
+  td.textContent = text || '';
+  return td;
+}
+
+const TABLE_COLUMNS = [
+  { label: 'Название', key: 'name' },
+  { label: 'Телефон', key: null },
+  { label: 'Найти', key: null },
+  { label: 'Статус', key: 'status' },
+  { label: '', key: null },
+  { label: 'Рубрика', key: 'rubric' },
+  { label: 'Город', key: 'city' },
+  { label: 'Адрес', key: 'address' },
+];
+
+function buildHeadRow(sortable) {
+  const headRow = document.createElement('tr');
+  TABLE_COLUMNS.forEach(col => {
+    const th = document.createElement('th');
+    th.textContent = col.label;
+    if (col.key && sortable) {
+      th.onclick = () => sortBy(col.key);
+      if (sortState.key === col.key) {
+        const arrow = document.createElement('span');
+        arrow.className = 'sort-arrow';
+        arrow.textContent = sortState.dir === 1 ? '▲' : '▼';
+        th.appendChild(arrow);
+      }
+    } else if (!col.key) {
+      // не сортируемые колонки (Телефон/Найти/действие) остаются кликабельно неактивными
+    }
+    headRow.appendChild(th);
+  });
+  return headRow;
+}
+
+function buildRow(r) {
+  const tr = document.createElement('tr');
+  tr.appendChild(cell(r.name));
+
+  const phoneTd = document.createElement('td');
+  const phoneInput = document.createElement('input');
+  phoneInput.className = 'phone-input';
+  phoneInput.placeholder = '+7…';
+  phoneInput.value = r.phone || '';
+
+  const waLinkEl = document.createElement('a');
+  waLinkEl.className = 'wa-link';
+  waLinkEl.target = '_blank';
+  waLinkEl.rel = 'noopener noreferrer';
+  updateWaLink(waLinkEl, phoneInput.value);
+
+  phoneInput.addEventListener('input', () => updateWaLink(waLinkEl, phoneInput.value));
+  phoneInput.addEventListener('change', async () => {
+    await updateLead(r.id, { phone: phoneInput.value.trim() });
+    renderTopLeads();
+    applyFilters();
+  });
+
+  phoneTd.appendChild(phoneInput);
+  phoneTd.appendChild(waLinkEl);
+  tr.appendChild(phoneTd);
+
+  const findTd = document.createElement('td');
+  findTd.className = 'col-tight';
+  const findLink = document.createElement('a');
+  findLink.className = 'find-link';
+  findLink.href = 'https://www.google.com/search?q=' +
+    encodeURIComponent(`${r.name} ${r.city} ${r.address} телефон`);
+  findLink.target = '_blank';
+  findLink.rel = 'noopener noreferrer';
+  findLink.textContent = 'гуглить →';
+  findTd.appendChild(findLink);
+  tr.appendChild(findTd);
+
+  const statusTd = document.createElement('td');
+  const statusSelect = document.createElement('select');
+  statusSelect.className = 'status-select';
+  const currentStatus = r.status || 'new';
+  statusSelect.dataset.status = currentStatus;
+  STATUS_OPTIONS.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.value;
+    opt.textContent = s.label;
+    if (s.value === currentStatus) opt.selected = true;
+    statusSelect.appendChild(opt);
+  });
+  statusSelect.addEventListener('change', async () => {
+    statusSelect.dataset.status = statusSelect.value;
+    await updateLead(r.id, { status: statusSelect.value });
+    renderTopLeads();
+    applyFilters();
+  });
+  statusTd.appendChild(statusSelect);
+  tr.appendChild(statusTd);
+
+  const actionTd = document.createElement('td');
+  const delBtn = document.createElement('button');
+  delBtn.className = 'row-del';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Удалить';
+  delBtn.onclick = () => deleteLead(r.id);
+  actionTd.appendChild(delBtn);
+  tr.appendChild(actionTd);
+
+  tr.appendChild(cell(r.rubric));
+  tr.appendChild(cell(r.city));
+  tr.appendChild(cell(r.address));
+
+  return tr;
+}
+
+function renderTable(rows) {
+  const wrap = document.getElementById('tableWrap');
+  wrap.textContent = '';
+
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = allLeads.length ? 'Ничего не найдено под фильтром' : 'Пока пусто — запусти поиск выше';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  const scrollBox = document.createElement('div');
+  scrollBox.className = 'table-scroll';
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  thead.appendChild(buildHeadRow(true));
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  rows.forEach(r => tbody.appendChild(buildRow(r)));
+  table.appendChild(tbody);
+  scrollBox.appendChild(table);
+  wrap.appendChild(scrollBox);
+}
+
+// Ниши под запись клиента — сюда логично допродать не только сайт, но и
+// тг-бота записи/CRM (бронирование, напоминания). См. историю поиска —
+// именно эти ниши целенаправленно собирались под связку "сайт + бот".
+const TOP_RELEVANT_NICHES = new Set([
+  'салон красоты', 'барбершоп', 'стоматология', 'фитнес клуб',
+  'массажный салон', 'косметология', 'ветеринарная клиника', 'йога студия',
+  'мастер маникюра',
+]);
+
+function scoreLead(r) {
+  const status = r.status || 'new';
+  if (status === 'not_interested' || status === 'has_site') return -Infinity;
+
+  let score = 0;
+  if (TOP_RELEVANT_NICHES.has(r.niche)) score += 3;
+  if (r.phone) score += 2;
+  if (status === 'interested') score += 3;
+  else if (status === 'new') score += 1;
+  return score;
+}
+
+function renderTopLeads() {
+  const panel = document.getElementById('topLeadsPanel');
+  const wrap = document.getElementById('topLeadsWrap');
+
+  if (!allLeads.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  const top = allLeads
+    .map(r => ({ r, score: scoreLead(r) }))
+    .filter(x => x.score > -Infinity)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 20)
+    .map(x => x.r);
+
+  if (!top.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = '';
+  wrap.textContent = '';
+
+  const scrollBox = document.createElement('div');
+  scrollBox.className = 'table-scroll';
+  scrollBox.style.maxHeight = '40vh';
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  thead.appendChild(buildHeadRow(false));
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  top.forEach(r => tbody.appendChild(buildRow(r)));
+  table.appendChild(tbody);
+
+  scrollBox.appendChild(table);
+  wrap.appendChild(scrollBox);
+}
+
+async function updateLead(id, patch) {
+  await fetch(`/api/leads/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const lead = allLeads.find(l => l.id === id);
+  if (lead) Object.assign(lead, patch);
+}
+
+async function deleteLead(id) {
+  await fetch(`/api/leads/${id}`, { method: 'DELETE' });
+  await loadLeads({ keepFilters: true });
+}
+
+async function clearAll() {
+  if (!confirm('Удалить все сохранённые лиды? Это необратимо.')) return;
+  await fetch('/api/leads', { method: 'DELETE' });
+  await loadLeads({ keepFilters: true });
+  setStats('');
+}
+
+function exportCsv() {
+  window.location.href = '/api/export';
+}
+
+restoreLastQuery();
+loadLeads();
+</script>
+</body>
+</html>
