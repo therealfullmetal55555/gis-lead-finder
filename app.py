@@ -51,6 +51,14 @@ def init_db() -> None:
         conn.execute("ALTER TABLE leads ADD COLUMN status TEXT DEFAULT 'new'")
     except sqlite3.OperationalError:
         pass  # колонка уже добавлена в прошлый запуск
+    try:
+        conn.execute("ALTER TABLE leads ADD COLUMN review_count INTEGER")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE leads ADD COLUMN rating REAL")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -88,6 +96,14 @@ def extract_contacts(item: dict) -> dict:
     return {"phones": phones, "has_website": has_website}
 
 
+def extract_reviews(item: dict) -> dict:
+    reviews = item.get("reviews") or {}
+    return {
+        "review_count": reviews.get("general_review_count"),
+        "rating": reviews.get("general_rating"),
+    }
+
+
 async def fetch_2gis(niche: str, city: str, count: int) -> list[dict]:
     if not API_KEY:
         raise HTTPException(500, "DGIS_API_KEY не задан — добавь ключ в .env")
@@ -108,7 +124,7 @@ async def fetch_2gis(niche: str, city: str, count: int) -> list[dict]:
                 "key": API_KEY,
                 "page": page,
                 "page_size": page_size,
-                "fields": "items.contact_groups,items.point,items.address_name,items.rubrics",
+                "fields": "items.contact_groups,items.point,items.address_name,items.rubrics,items.reviews",
                 "locale": "ru_RU",
             }
             resp = await client.get(CATALOG_URL, params=params)
@@ -139,6 +155,7 @@ async def search(req: SearchRequest):
     saved = []
     for item in items:
         contacts = extract_contacts(item)
+        reviews = extract_reviews(item)
         rubrics = item.get("rubrics") or []
         rubric = rubrics[0].get("name", "") if rubrics else ""
 
@@ -150,18 +167,22 @@ async def search(req: SearchRequest):
             "phone": ", ".join(contacts["phones"]),
             "rubric": rubric,
             "has_website": int(contacts["has_website"]),
+            "review_count": reviews["review_count"],
+            "rating": reviews["rating"],
             "source_id": item.get("id", ""),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         conn.execute(
             """
             INSERT INTO leads
-                (niche, city, name, address, phone, rubric, has_website, source_id, created_at)
+                (niche, city, name, address, phone, rubric, has_website, review_count, rating, source_id, created_at)
             VALUES
-                (:niche, :city, :name, :address, :phone, :rubric, :has_website, :source_id, :created_at)
+                (:niche, :city, :name, :address, :phone, :rubric, :has_website, :review_count, :rating, :source_id, :created_at)
             ON CONFLICT(source_id) DO UPDATE SET
                 phone=excluded.phone,
                 has_website=excluded.has_website,
+                review_count=excluded.review_count,
+                rating=excluded.rating,
                 created_at=excluded.created_at
             """,
             row,
@@ -179,6 +200,53 @@ def list_leads():
     rows = conn.execute("SELECT * FROM leads ORDER BY created_at DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+@app.post("/api/backfill-reviews")
+async def backfill_reviews():
+    """Дозаполняет review_count/rating для лидов, собранных до того, как
+    поиск начал запрашивать items.reviews. Идёт пачками по 30 id — это
+    подтверждённый на практике лимит /items/byid для этого ключа."""
+    if not API_KEY:
+        raise HTTPException(500, "DGIS_API_KEY не задан — добавь ключ в .env")
+
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, source_id FROM leads WHERE review_count IS NULL AND source_id != ''"
+    ).fetchall()
+
+    updated = 0
+    batch_size = 30
+    async with httpx.AsyncClient(timeout=20) as client:
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i : i + batch_size]
+            ids_by_source = {r["source_id"]: r["id"] for r in batch}
+            params = {
+                "id": ",".join(ids_by_source.keys()),
+                "key": API_KEY,
+                "fields": "items.reviews",
+                "locale": "ru_RU",
+            }
+            resp = await client.get(f"{CATALOG_URL}/byid", params=params)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            if (data.get("meta") or {}).get("code") != 200:
+                continue
+            for item in (data.get("result") or {}).get("items") or []:
+                reviews = extract_reviews(item)
+                lead_id = ids_by_source.get(item.get("id"))
+                if lead_id is None:
+                    continue
+                conn.execute(
+                    "UPDATE leads SET review_count = ?, rating = ? WHERE id = ?",
+                    (reviews["review_count"], reviews["rating"], lead_id),
+                )
+                updated += 1
+            conn.commit()
+
+    conn.close()
+    return {"total_missing": len(rows), "updated": updated}
 
 
 @app.patch("/api/leads/{lead_id}")
@@ -238,11 +306,16 @@ def export_csv():
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Ниша", "Город", "Название", "Адрес", "Рубрика", "Телефон", "Статус"])
+    writer.writerow(["Ниша", "Город", "Название", "Адрес", "Рубрика", "Телефон", "Отзывов", "Рейтинг", "Статус"])
     for r in rows:
         status_label = STATUS_LABELS.get(r["status"], r["status"] or "Новый")
         writer.writerow(
-            [r["niche"], r["city"], r["name"], r["address"], r["rubric"], r["phone"], status_label]
+            [
+                r["niche"], r["city"], r["name"], r["address"], r["rubric"], r["phone"],
+                r["review_count"] if r["review_count"] is not None else "",
+                r["rating"] if r["rating"] is not None else "",
+                status_label,
+            ]
         )
     buf.seek(0)
     return StreamingResponse(

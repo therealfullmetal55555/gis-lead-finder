@@ -188,7 +188,7 @@
     <div class="toolbar">
       <div>
         <div style="font-weight: 600; margin-bottom: 2px;">🔥 Топ лиды</div>
-        <div class="sub" style="margin: 0;">Ниша под запись+бота, ещё не отработаны, у кого уже есть телефон — выше в списке.</div>
+        <div class="sub" style="margin: 0;">Мало отзывов в 2GIS = маленький/свежий бизнес, скорее без сайта и проще закрыть. Сети и раскрученные — вниз или вон.</div>
       </div>
     </div>
     <div id="topLeadsWrap"></div>
@@ -387,7 +387,13 @@ function applyFilters() {
     return true;
   });
 
-  if (sortState.key) {
+  if (sortState.key === 'review_count') {
+    filtered = filtered.slice().sort((a, b) => {
+      const av = a.review_count === null || a.review_count === undefined ? -1 : a.review_count;
+      const bv = b.review_count === null || b.review_count === undefined ? -1 : b.review_count;
+      return (av - bv) * sortState.dir;
+    });
+  } else if (sortState.key) {
     filtered = filtered.slice().sort((a, b) => {
       const av = (a[sortState.key] || '').toString().toLowerCase();
       const bv = (b[sortState.key] || '').toString().toLowerCase();
@@ -412,12 +418,13 @@ function sortBy(key) {
 
 function cell(text) {
   const td = document.createElement('td');
-  td.textContent = text || '';
+  td.textContent = (text === null || text === undefined) ? '' : text;
   return td;
 }
 
 const TABLE_COLUMNS = [
   { label: 'Название', key: 'name' },
+  { label: 'Отзывов', key: 'review_count' },
   { label: 'Телефон', key: null },
   { label: 'Найти', key: null },
   { label: 'Статус', key: 'status' },
@@ -451,6 +458,7 @@ function buildHeadRow(sortable) {
 function buildRow(r) {
   const tr = document.createElement('tr');
   tr.appendChild(cell(r.name));
+  tr.appendChild(cell(r.review_count === null || r.review_count === undefined ? '—' : r.review_count));
 
   const phoneTd = document.createElement('td');
   const phoneInput = document.createElement('input');
@@ -560,15 +568,39 @@ const TOP_RELEVANT_NICHES = new Set([
   'мастер маникюра',
 ]);
 
+// Явные текстовые маркеры "это сеть/крупная контора" — у таких почти всегда
+// уже есть сайт и маркетолог, продать сложнее.
+const BIG_BUSINESS_KEYWORDS = ['сеть', 'холдинг', 'группа компаний', 'многопрофильный', 'корпорация', 'филиал'];
+// Маркеры "это маленькое одиночное заведение" — легче закрыть на сайт.
+const SMALL_BUSINESS_KEYWORDS = ['студия', 'кабинет', 'частная', 'мастер '];
+
 function scoreLead(r) {
   const status = r.status || 'new';
   if (status === 'not_interested' || status === 'has_site') return -Infinity;
 
   let score = 0;
-  if (TOP_RELEVANT_NICHES.has(r.niche)) score += 3;
+  const nameLower = (r.name || '').toLowerCase();
+
+  // Главный сигнал — число отзывов в 2GIS: чем меньше, тем скорее бизнес
+  // маленький/свежий и без сайта. Чем больше — тем вероятнее раскрученная
+  // сеть с уже готовым сайтом и своим маркетингом.
+  const rc = r.review_count;
+  if (rc !== null && rc !== undefined) {
+    if (rc <= 3) score += 6;
+    else if (rc <= 10) score += 4;
+    else if (rc <= 25) score += 1;
+    else if (rc <= 60) score -= 3;
+    else score -= 6;
+  }
+
+  if (BIG_BUSINESS_KEYWORDS.some(k => nameLower.includes(k))) score -= 5;
+  if (SMALL_BUSINESS_KEYWORDS.some(k => nameLower.includes(k))) score += 1;
+
+  if (TOP_RELEVANT_NICHES.has(r.niche)) score += 2;
   if (r.phone) score += 2;
   if (status === 'interested') score += 3;
   else if (status === 'new') score += 1;
+
   return score;
 }
 
